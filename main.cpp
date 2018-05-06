@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <ctime>
+#include <iomanip>
 #include "SDPair.h"
 #include "Network.h"
 using namespace std;
@@ -26,6 +28,39 @@ int main(int argc, char** argv)
 		cerr<< e.what()<< endl;
 		return -1;
 	}
+
+	// OFFLINE STAGE
+	cout<< "Offline Stage Performance:\n";
+	cout<< "------------------------------\n";
+	clock_t start = clock();
+
+	SDPair::prepareGPU(network);
+
+	SDPair test(0, 4, network);
+
+	// SDPair*** sdPairs;
+	// sdPairs = new SDPair**[network->size];
+	// for (int i = 0; i < network->size; i++)
+	// {
+	// 	sdPairs[i] = new SDPair*[network->size];
+	// 	for (int j = 0; j < network->size; j++)
+	// 	{
+	// 		sdPairs[i][j] = new SDPair(i, j, network);
+	// 	}
+	// }
+
+	// cout<< left<< setw(30)<<"Link Usage Calculation: "<< (clock() - start)/(double)CLOCKS_PER_SEC<< endl;
+	// start = clock();
+	// int** globalPPV = SDPair::calculateGlobalPPV(sdPairs, network);
+	// for (int i = 0; i < network->size; i++)
+	// {
+	// 	for (int j = 0; j < network->size; j++)
+	// 	{
+	// 		if (i == j) continue;
+	// 		sdPairs[i][j]->calculatePPV(globalPPV);
+	// 	}
+	// }
+	// cout<< setw(30)<<"PPV Calculation: "<< (clock() - start)/(double)CLOCKS_PER_SEC<< endl;
 
 	return 0;
 }
