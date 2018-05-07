@@ -42,7 +42,7 @@ public:
 	int size;
 	struct ParallelRepresenation parallelRepresentation;
 
-	Network(int** network, int size):
+	Network(int** network, int size) :
 		network(network), size(size)
 	{
 		this->_calculateParallelRepresentation();
@@ -61,7 +61,7 @@ public:
 		}
 
 		return copy;
-	}		
+	}
 };
 
 #endif

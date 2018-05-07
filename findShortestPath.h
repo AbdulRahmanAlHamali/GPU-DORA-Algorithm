@@ -4,19 +4,19 @@
 #include <vector>
 
 /**
- * Runs BFS algorithm to find the shortest unweighted path from node s to node d
+* Runs BFS algorithm to find the shortest unweighted path from node s to node d
 **/
 std::vector<int> BFS(int** network, int networkSize, int source, int destination)
 {
-    std::vector<bool> visited(networkSize, false);
-    std::vector<int> previous(networkSize, -1);
-    std::queue<int> Q;
- 	Q.push(source);
+	std::vector<bool> visited(networkSize, false);
+	std::vector<int> previous(networkSize, -1);
+	std::queue<int> Q;
+	Q.push(source);
 	visited[source] = true;
-	
-	while(!Q.empty())
+
+	while (!Q.empty())
 	{
-		int top = Q.front(); 
+		int top = Q.front();
 		Q.pop();
 
 		for (int i = 0; i < networkSize; i++)
@@ -27,7 +27,7 @@ std::vector<int> BFS(int** network, int networkSize, int source, int destination
 				if (i == destination)
 					return previous;
 				Q.push(i);
-				visited[i] = true;				
+				visited[i] = true;
 			}
 		}
 	}

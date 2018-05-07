@@ -1,3 +1,5 @@
+#define GPU
+
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -7,7 +9,6 @@
 #include "Network.h"
 using namespace std;
 
-#define GPU
 
 Network* readNetworkDescriptionFromFile(string fileName);
 
@@ -37,6 +38,7 @@ int main(int argc, char** argv)
 	clock_t start = clock();
 
 	SDPair::prepareGPU(network);
+	SDPair::calculateUsesLinkGPU(network);
 
 	SDPair test(0, 4, network);
 

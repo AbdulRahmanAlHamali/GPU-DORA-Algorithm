@@ -2,8 +2,10 @@
 #define SDPAIR_H
 #include <iostream>
 #include <vector>
+#include <cuda_runtime.h>
 #include "Network.h"
 #include "findShortestPath.h"
+#include "uses-link.kernel.cuh"
 
 class SDPair
 {
@@ -21,38 +23,33 @@ private:
 			for (int j = 0; j < this->_network->size; j++)
 			{
 				this->_usesLink[i][j] = false;
-			}	
+			}
 		}
 
 		int** copyOfNetwork = this->_network->getCopyOfNetwork();
 
 		do
 		{
-			std::vector<int> previousVector 
+			std::vector<int> previousVector
 				= BFS(copyOfNetwork, this->_network->size, this->source, this->destination);
-			
+
 			if (previousVector[this->destination] == -1) break;
 
 			int current = this->destination;
-			while(current != this->source)
+			while (current != this->source)
 			{
 				int prev = previousVector[current];
 				this->_usesLink[prev][current] = true;
 				copyOfNetwork[prev][current] = 0;
 				current = prev;
 			}
-		} while(hasNoneZeroValues(copyOfNetwork[source], this->_network->size));
+		} while (hasNoneZeroValues(copyOfNetwork[source], this->_network->size));
 
 		for (int i = 0; i < this->_network->size; i++)
 		{
 			delete copyOfNetwork[i];
 		}
 		delete copyOfNetwork;
-	}
-
-	void _calculateUsesLinkGPU()
-	{
-		
 	}
 
 	bool hasNoneZeroValues(int* row, int rowSize)
@@ -71,19 +68,14 @@ public:
 	float** ppv;
 	static bool usesGpu;
 
-	SDPair(int source, int destination, Network* network):
+	SDPair(int source, int destination, Network* network) :
 		source(source), destination(destination), _network(network)
 	{
 		this->_usesLink = NULL;
 		this->ppv = NULL;
-		if (SDPair::usesGpu)
-		{
-			this->_calculateUsesLinkGPU();
-		}
-		else
-		{
-			this->_calculateUsesLink();
-		}
+#ifndef GPU
+		this->_calculateUsesLink();
+#endif
 	}
 
 	~SDPair()
@@ -109,7 +101,7 @@ public:
 	void calculatePPV(int** globalPPV)
 	{
 		int networkSize = this->_network->size;
-		
+
 		// Will be used later to normalize the PPV
 		int min = 0;
 		int max = 0;
@@ -125,7 +117,7 @@ public:
 				{
 					this->ppv[i][j] -= 2;
 				}
-				
+
 				if (this->ppv[i][j] < min || min == 0)
 				{
 					min = this->ppv[i][j];
@@ -142,7 +134,7 @@ public:
 			for (int j = 0; j < networkSize; j++)
 			{
 				ppv[i][j] = (ppv[i][j] - min) * (100.0 / (max - min));
-			}	
+			}
 		}
 	}
 
@@ -164,7 +156,7 @@ public:
 					{
 						if (allSDPairs[s][d]->_usesLink[i][j])
 						{
-							
+
 							globalPPV[i][j] += 1;
 						}
 					}
@@ -175,7 +167,11 @@ public:
 		return globalPPV;
 	}
 
-	#ifdef GPU
+#ifdef GPU
+
+	static int* d_vertexArray;
+	static int* d_edgeArray;
+
 	static void prepareGPU(Network* network) {
 		// Restructure the network graph
 		int networkSize = network->size;
@@ -183,29 +179,24 @@ public:
 		int* edgeArray = network->parallelRepresentation.edges;
 		int numberOfEdges = network->parallelRepresentation.numberOfEdges;
 
-		int* d_vertexArray;
-		int* d_edgeArray;
-		cudaMalloc(d_vertexArray, sizeof(int) * networkSize);
-		cudaMalloc(d_edgeArray, sizeof(int) * numberOfEdges);
+		cudaMalloc(&d_vertexArray, sizeof(int) * networkSize);
+		cudaMalloc(&d_edgeArray, sizeof(int) * numberOfEdges);
 
 		cudaMemcpy(d_vertexArray, vertexArray, sizeof(int) * networkSize, cudaMemcpyHostToDevice);
 		cudaMemcpy(d_edgeArray, edgeArray, sizeof(int) * numberOfEdges, cudaMemcpyHostToDevice);
-
-		std::cout<< "Vertices\n";
-		for (int i = 0; i < networkSize; i++)
-		{
-			std::cout<< vertexArray[i]<< " ";
-		}
-		std::cout<< "Edges\n";
-		for (int i = 0; i < numberOfEdges; i++)
-		{
-			std::cout<< edgeArray[i]<< " ";
-		}
-		std::cout<< std::endl;
 	}
-	#endif
+
+	static void calculateUsesLinkGPU(Network* network)
+	{
+		dim3 blockSize(network->size, 1, 1);
+		dim3 blocksPerGrid(network->size, network->size, 1);
+		usesLinkKernel << <blocksPerGrid, blockSize, sizeof(int) * (4*network->size + network->parallelRepresentation.numberOfEdges) + sizeof(bool) >> > (SDPair::d_vertexArray, SDPair::d_edgeArray, network->size, network->parallelRepresentation.numberOfEdges);
+	}
+#endif
 };
 
 bool SDPair::usesGpu = false;
+int* SDPair::d_vertexArray = NULL;
+int* SDPair::d_edgeArray = NULL;
 
 #endif
