@@ -42,6 +42,12 @@ private:
 				current = prev;
 			}
 		} while(hasNoneZeroValues(copyOfNetwork[source], this->_network->size));
+
+		for (int i = 0; i < this->_network->size; i++)
+		{
+			delete copyOfNetwork[i];
+		}
+		delete copyOfNetwork;
 	}
 
 	void _calculateUsesLinkGPU()
@@ -63,11 +69,41 @@ public:
 	int source;
 	int destination;
 	float** ppv;
+	static bool usesGpu;
 
 	SDPair(int source, int destination, Network* network):
 		source(source), destination(destination), _network(network)
 	{
-		this->_calculateUsesLinkGPU();
+		this->_usesLink = NULL;
+		this->ppv = NULL;
+		if (SDPair::usesGpu)
+		{
+			this->_calculateUsesLinkGPU();
+		}
+		else
+		{
+			this->_calculateUsesLink();
+		}
+	}
+
+	~SDPair()
+	{
+		if (this->_usesLink != NULL)
+		{
+			for (int i = 0; i < this->_network->size; i++)
+			{
+				delete this->_usesLink[i];
+			}
+			delete this->_usesLink;
+		}
+		if (this->ppv != NULL)
+		{
+			for (int i = 0; i < this->_network->size; i++)
+			{
+				delete this->ppv[i];
+			}
+			delete this->ppv;
+		}
 	}
 
 	void calculatePPV(int** globalPPV)
@@ -139,23 +175,21 @@ public:
 		return globalPPV;
 	}
 
+	#ifdef GPU
 	static void prepareGPU(Network* network) {
 		// Restructure the network graph
 		int networkSize = network->size;
-		std::vector<int> edgeArray;
-		int* vertexArray = new int[networkSize];
+		int* vertexArray = network->parallelRepresentation.vertices;
+		int* edgeArray = network->parallelRepresentation.edges;
+		int numberOfEdges = network->parallelRepresentation.numberOfEdges;
 
-		for (int i = 0; i < networkSize; i++)
-		{
-			vertexArray[i] = edgeArray.size();
-			for (int j = 0; j < networkSize; j++)
-			{
-				if (network->network[i][j] != 0)
-				{
-					edgeArray.push_back(j);
-				}
-			}
-		}
+		int* d_vertexArray;
+		int* d_edgeArray;
+		cudaMalloc(d_vertexArray, sizeof(int) * networkSize);
+		cudaMalloc(d_edgeArray, sizeof(int) * numberOfEdges);
+
+		cudaMemcpy(d_vertexArray, vertexArray, sizeof(int) * networkSize, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_edgeArray, edgeArray, sizeof(int) * numberOfEdges, cudaMemcpyHostToDevice);
 
 		std::cout<< "Vertices\n";
 		for (int i = 0; i < networkSize; i++)
@@ -163,12 +197,15 @@ public:
 			std::cout<< vertexArray[i]<< " ";
 		}
 		std::cout<< "Edges\n";
-		for (int i = 0; i < edgeArray.size(); i++)
+		for (int i = 0; i < numberOfEdges; i++)
 		{
 			std::cout<< edgeArray[i]<< " ";
 		}
 		std::cout<< std::endl;
 	}
+	#endif
 };
+
+bool SDPair::usesGpu = false;
 
 #endif
