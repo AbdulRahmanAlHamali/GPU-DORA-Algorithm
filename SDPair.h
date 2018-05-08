@@ -2,10 +2,15 @@
 #define SDPAIR_H
 #include <iostream>
 #include <vector>
+#ifdef GPU
 #include <cuda_runtime.h>
+#endif
+#include <ctime>
 #include "Network.h"
 #include "findShortestPath.h"
+#ifdef GPU
 #include "uses-link.kernel.cuh"
+#endif
 
 class SDPair
 {
@@ -66,7 +71,6 @@ public:
 	int source;
 	int destination;
 	float** ppv;
-	static bool usesGpu;
 
 	SDPair(int source, int destination, Network* network) :
 		source(source), destination(destination), _network(network)
@@ -190,13 +194,15 @@ public:
 	{
 		dim3 blockSize(network->size, 1, 1);
 		dim3 blocksPerGrid(network->size, network->size, 1);
-		usesLinkKernel << <blocksPerGrid, blockSize, sizeof(int) * (4*network->size + network->parallelRepresentation.numberOfEdges) + sizeof(bool) >> > (SDPair::d_vertexArray, SDPair::d_edgeArray, network->size, network->parallelRepresentation.numberOfEdges);
+		usesLinkKernel << <blocksPerGrid, blockSize, 
+			sizeof(int) * (4*network->size + network->parallelRepresentation.numberOfEdges) + sizeof(bool) * (1 + network->parallelRepresentation.numberOfEdges) >> > 
+			(SDPair::d_vertexArray, SDPair::d_edgeArray, network->size, network->parallelRepresentation.numberOfEdges);
 	}
 #endif
 };
 
-bool SDPair::usesGpu = false;
+#ifdef GPU
 int* SDPair::d_vertexArray = NULL;
 int* SDPair::d_edgeArray = NULL;
-
+#endif
 #endif

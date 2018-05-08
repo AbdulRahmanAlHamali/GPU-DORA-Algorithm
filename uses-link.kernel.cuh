@@ -8,7 +8,8 @@ __global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int n
 	int* frontier = shared + sizeof(int)*(networkSize + numberOfEdges);
 	int* visited = shared + sizeof(int)*(2 * networkSize + numberOfEdges);
 	int* previous = shared + sizeof(int)*(3 * networkSize + numberOfEdges);
-	bool* done = shared + sizeof(int)*(4 * networkSize + numberOfEdges);
+	bool* usesLink = shared + sizeof(int)*(4 * networkSize + numberOfEdges);
+	bool* done = shared + sizeof(int)*(4 * networkSize +  numberOfEdges) + sizeof(bool) * numberOfEdges;
 
 	// Each block will work on one SD pair
 	int source = blockIdx.x;
@@ -22,6 +23,7 @@ __global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int n
 	if (threadIdx.x < numberOfEdges)
 	{
 		sharedEdges[threadIdx.x] = edges[threadIdx.x];
+		_usesLink[threadIdx.x] = false;
 	}
 
 	__syncthreads();
@@ -59,7 +61,7 @@ __global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int n
 						visited[t] = true;
 						
 						int start = sharedVertices[t];
-						int end = t < networkSize - 1? sharedVertices[t + 1] - 1 : numberOfEdges - 1);
+						int end = t < networkSize - 1? (sharedVertices[t + 1] - 1 : numberOfEdges - 1);
 						for (int i = start; i < end; i++) 
 						{
 							int target = sharedEdges[i];
@@ -81,5 +83,33 @@ __global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int n
 		}
 		__syncthreads();
 		
-	} while(false);
+		if (previous[destination] == -1) break;
+
+		if (threadIdx.x == 0)
+		{
+			
+			int current = destination;
+			while (current != source)
+			{
+				int prev = previous[current];
+				int start = sharedVertices[prev];
+				int end = prev < networkSize - 1? (sharedVertices[prev + 1] - 1 : numberOfEdges - 1);
+				for (int i = start; i < end; i++) 
+				{
+					if (sharedEdges[i] == current)
+					{
+						usesLink[i] = true;
+						sharedEdges[i] = -1;
+						break;
+					}
+
+				}
+				current = prev;
+			}
+		}
+
+	} while(true);
+
+	
+
 }
