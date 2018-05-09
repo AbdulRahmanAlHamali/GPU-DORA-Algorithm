@@ -42,15 +42,7 @@ int main(int argc, char** argv)
 		for (int j = 0; j < network->size; j++)
 		{
 			clock_t start2;
-			if (i == 0 && j == 36)
-			{
-				start2 = clock();
-			}
 			sdPairs[i][j] = new SDPair(i, j, network);
-			if (i == 0 && j == 36)
-			{
-				cout<< (clock() - start)/(double)CLOCKS_PER_SEC<< endl;
-			}	
 		}
 	}
 

@@ -1,19 +1,23 @@
 #include <cuda_runtime.h>
 
-__global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int numberOfEdges)
+__global__ void usesLinkKernel(int* vertices, int* edges, bool* usesLink, int* ppv, int networkSize, int numberOfEdges)
 {
-	extern __shared__ int shared[];
-	int* sharedVertices = shared;
-	int* sharedEdges = shared + sizeof(int)*networkSize;
-	int* frontier = shared + sizeof(int)*(networkSize + numberOfEdges);
-	int* visited = shared + sizeof(int)*(2 * networkSize + numberOfEdges);
-	int* previous = shared + sizeof(int)*(3 * networkSize + numberOfEdges);
-	bool* usesLink = shared + sizeof(int)*(4 * networkSize + numberOfEdges);
-	bool* done = shared + sizeof(int)*(4 * networkSize +  numberOfEdges) + sizeof(bool) * numberOfEdges;
-
+	extern __shared__ char shared[];
+	int* sharedVertices = (int*)shared;
+	int* sharedEdges = (int*)shared + networkSize;
+	int* previous = (int*)shared + (networkSize + numberOfEdges);
+	bool* visited = (bool*)((int*)shared + (2*networkSize + numberOfEdges));
+	bool* frontier = (bool*)((int*)shared + (2 * networkSize + numberOfEdges)) + networkSize;
+	bool* nextFrontier = (bool*)((int*)shared + (2 * networkSize + numberOfEdges)) + 2 * networkSize;
+	
 	// Each block will work on one SD pair
-	int source = blockIdx.x;
-	int destination = blockIdx.y;
+	int source = blockIdx.y;
+	int destination = blockIdx.x;
+
+	if (source == destination)
+	{
+		return;
+	}
 
 	// Start by loading the network into shared memory
 	if (threadIdx.x < networkSize)
@@ -23,12 +27,8 @@ __global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int n
 	if (threadIdx.x < numberOfEdges)
 	{
 		sharedEdges[threadIdx.x] = edges[threadIdx.x];
-		_usesLink[threadIdx.x] = false;
 	}
 
-	__syncthreads();
-	
-	// Now, we do BFS
 	do
 	{
 		if (threadIdx.x < networkSize)
@@ -36,23 +36,23 @@ __global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int n
 			if (threadIdx.x != source)
 			{
 				frontier[threadIdx.x] = false;
-				visited[threadIdx.x] = false;
+				nextFrontier[threadIdx.x] = false;
 				previous[threadIdx.x] = -1;
 			}
 			else
 			{
 				frontier[source] = true;
-				*done = false;
 			}
 			visited[threadIdx.x] = false;
 		}
-
+		
 		__syncthreads();
 		if (threadIdx.x == 0)
 		{
-			while (!(*done))
+			bool done = false;
+			while (!done)
 			{
-				*done = true;
+				done = true;
 				for (int t = 0; t < networkSize; t++)
 				{
 					if (frontier[t] == true && visited[t] == false)
@@ -61,44 +61,51 @@ __global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int n
 						visited[t] = true;
 						
 						int start = sharedVertices[t];
-						int end = t < networkSize - 1? (sharedVertices[t + 1] - 1 : numberOfEdges - 1);
-						for (int i = start; i < end; i++) 
+						int end = t < networkSize - 1? sharedVertices[t + 1] - 1 : numberOfEdges - 1;
+						
+						for (int i = start; i <= end; i++) 
 						{
+							if (sharedEdges[i] == -1) continue;
 							int target = sharedEdges[i];
 
-							if (visited[target] == false)
+							if (visited[target] == false && frontier[target] == false && nextFrontier[target] == false)
 							{
-								prev[target] = t;
-								frontier[target] = true;
-								*done = false;
+								previous[target] = t;
+								nextFrontier[target] = true;
+								done = false;
 							}
 
 						}
 					}
 				}
+
+				for (int i = 0; i < networkSize; i++)
+				{
+					frontier[i] = nextFrontier[i];
+					nextFrontier[i] = false;
+				}
 				
 				if (visited[destination] == true)
-					*done = true;
+					done = true;
 			}
 		}
 		__syncthreads();
 		
 		if (previous[destination] == -1) break;
-
+		
 		if (threadIdx.x == 0)
 		{
-			
 			int current = destination;
 			while (current != source)
 			{
 				int prev = previous[current];
 				int start = sharedVertices[prev];
-				int end = prev < networkSize - 1? (sharedVertices[prev + 1] - 1 : numberOfEdges - 1);
-				for (int i = start; i < end; i++) 
+				int end = prev < networkSize - 1? sharedVertices[prev + 1] - 1 : numberOfEdges - 1;
+				for (int i = start; i <= end; i++) 
 				{
 					if (sharedEdges[i] == current)
 					{
-						usesLink[i] = true;
+						usesLink[source * networkSize * numberOfEdges + destination * numberOfEdges  + i] = true;
 						sharedEdges[i] = -1;
 						break;
 					}
@@ -110,6 +117,11 @@ __global__ void usesLinkKernel(int* vertices, int* edges, int networkSize, int n
 
 	} while(true);
 
-	
+	__syncthreads();
+
+	if (threadIdx.x < numberOfEdges)
+	{
+		atomicAdd(&ppv[threadIdx.x], usesLink[source * networkSize * numberOfEdges + destination * numberOfEdges + threadIdx.x]);
+	}
 
 }
