@@ -1,5 +1,8 @@
 # GPU-DORA-Algorithm
-**Test case generation **
+
+Test case generation
+========
+
 First, compile generate_sample_network.cpp, by using:
 ```
 g++ generate_sample_network.cpp -o generate_sample_network
@@ -15,7 +18,9 @@ Where:
 - max_bandwidth is optional (default 20), and represents the maximum bandwidth of the links in the network
 - sparsity is optional (default 0.7), and represents how sparce the network is (1 means no links, 0 means there are links from every node to every node)
 
-**Running the code**
+Running the code
+========
+
 First, compile main-gpu.cu, by using:
 ```
 nvcc main-gpu.cu -o main-gpu
