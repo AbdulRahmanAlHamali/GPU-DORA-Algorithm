@@ -18,6 +18,7 @@ class SDPair
 private:
 	Network* _network;
 	bool** _usesLink;
+	bool** _compactUsesLink;
 
 	void _calculateUsesLink()
 	{
@@ -71,6 +72,7 @@ public:
 	int source;
 	int destination;
 	int** ppv;
+	int** compactPPV;
 
 	SDPair(int source, int destination, Network* network) :
 		source(source), destination(destination), _network(network)
@@ -82,7 +84,7 @@ public:
 
 #ifdef GPU
 	SDPair(int source, int destination, Network* network, bool** usesLink, int** ppv):
-		source(source), destination(destination), _network(network), _usesLink(usesLink), ppv(ppv)
+		source(source), destination(destination), _network(network), _compactUsesLink(usesLink), compactPPV(ppv)
 	{
 	}
 #endif
@@ -261,7 +263,7 @@ public:
 		error = cudaGetLastError();
 		if (error != cudaSuccess)
 		{
-			std::cerr << "Error executing usesLink kernel: " << cudaGetErrorString(error) << std::endl;
+			std::cerr << "Error executing ppv kernel: " << cudaGetErrorString(error) << std::endl;
 			std::cerr << "The following information might be helpful\n";
 			std::cerr << "Number of blocks: " << networkSize * networkSize << std::endl;
 			std::cerr << "Number of threads per block: " << numberOfThreads << std::endl;
@@ -291,6 +293,9 @@ public:
 			result[s] = new SDPair*[networkSize];
 			for (int d = 0; d < networkSize; d++)
 			{
+				/*
+				This code transforms the compact adjacency list representation of the network into an adjacency matrix representation
+				It is not needed when comparing speeds. 
 				bool** sdUsesLink = new bool*[networkSize];
 				int** sdPPV = new int*[networkSize];
 				int gpuIndex = 0;
@@ -310,7 +315,8 @@ public:
 						}
 					}
 				}
-				result[s][d] = new SDPair(s, d, network, sdUsesLink, sdPPV);
+				result[s][d] = new SDPair(s, d, network, sdUsesLink, sdPPV);*/
+				result[s][d] = new SDPair(s, d, network, usesLink[s * networkSize * numberOfEdges + d * numberOfEdges], gpuPPV[s * networkSize * numberOfEdges + d * numberOfEdges]);
 			}
 		}
 

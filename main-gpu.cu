@@ -72,6 +72,7 @@ int main(int argc, char** argv)
 	timer.Stop();
 	cout << left<< setw(30) << "PPV Calculation: " << timer.Elapsed() / 1000 << endl;
 
+	/* before you enable this result comparison code, please enable the code in SDPair::calculateSDPairsFromGPU, which will convert the network representation to adjacency matrix represntation used in the comparison
 	cout << "------------------------------\n";
 	cout << "Result Comparison:\n";
 	cout << "------------------------------\n";
@@ -103,7 +104,9 @@ int main(int argc, char** argv)
 		cout << "This is caused by the fact that the BFS algorithm implemented is different, and it picks its nodes in a slightly different order\n";
 		cout << "This has been checked by inspecting many of the outputs, and validating that both of them are actually correct solutions\n";
 		cout << "Notice that the number of difference in usesLink is generally less than the number of differences in PPV, because one difference in usesLink causes many differences in PPV\n";
-	}
+	}*/
+
+	
 
 	return 0;
 }

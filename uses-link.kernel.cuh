@@ -117,9 +117,9 @@ __global__ void usesLinkKernel(int* vertices, int* edges, bool* usesLink, int* p
 
 	for (int i = 0; i < numberOfEdges; i += 1024)
 	{
-		if (i + threadIdx.x < numberOfEdges)
+		if (i + threadIdx.x < numberOfEdges && usesLink[source * networkSize * numberOfEdges + destination * numberOfEdges + i + threadIdx.x])
 		{
-			atomicAdd(&ppv[i + threadIdx.x], usesLink[source * networkSize * numberOfEdges + destination * numberOfEdges + i + threadIdx.x]);
+			atomicAdd(&ppv[i + threadIdx.x], 1);
 		}
 	}
 	
