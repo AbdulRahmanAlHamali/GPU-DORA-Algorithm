@@ -1,10 +1,6 @@
-# GPU-DORA-Algorithm
-
-What is this??
-
+# GPU-DORA-Algoritm
+What is this project?
 ========
-
-
 GPU Implementation of the offline stage of DORA algorithm for Software-Defined Networks ([see paper](https://github.com/AbdulRahmanAlHamali/GPU-DORA-Algorithm/blob/master/GPU%20Implementation%20of%20the%20Offline%20Stage%20of%20DORA%20Algorithm%20for%20SDN.pdf))  
 
 
@@ -13,6 +9,8 @@ The project was implemented as a course project for EECE696: Applied Parallel Pr
 
 Test case generation
 ========
+
+A few test cases are already provided in test-networks directory. However if you wish to create your own test cases:
 
 First, compile generate_sample_network.cpp, by using:
 ```
