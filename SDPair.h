@@ -10,6 +10,7 @@
 #include "findShortestPath.h"
 #ifdef GPU
 #include "uses-link.kernel.cuh"
+#include "ppv.kernel.cuh"
 #endif
 
 class SDPair
@@ -66,32 +67,10 @@ private:
 		}
 		return false;
 	}
-#ifdef GPU
-	void _convertUsesLinkFromGpuToStandardFormat(bool* gpuUsesLink)
-	{
-		int networkSize = this->_network->size;
-		this->_usesLink = new bool*[networkSize];
-		
-		int gpuIndex = 0;
-		for (int s = 0; s < networkSize; s++)
-		{
-			this->_usesLink[s] = new bool[networkSize];
-			for (int d = 0; d < networkSize; d++)
-			{
-				this->_usesLink[s][d] = this->_network->network[s][d] != 0;
-				if (this->_usesLink[s][d])
-				{
-					this->_usesLink[s][d] = gpuUsesLink[gpuIndex];
-					gpuIndex++;
-				}
-			}
-		}
-	}
-#endif
 public:
 	int source;
 	int destination;
-	float** ppv;
+	int** ppv;
 
 	SDPair(int source, int destination, Network* network) :
 		source(source), destination(destination), _network(network)
@@ -102,10 +81,9 @@ public:
 	}
 
 #ifdef GPU
-	SDPair(int source, int destination, Network* network, bool** usesLink):
-		source(source), destination(destination), _network(network), _usesLink(usesLink)
+	SDPair(int source, int destination, Network* network, bool** usesLink, int** ppv):
+		source(source), destination(destination), _network(network), _usesLink(usesLink), ppv(ppv)
 	{
-		this->ppv = NULL;
 	}
 #endif
 
@@ -133,29 +111,16 @@ public:
 	{
 		int networkSize = this->_network->size;
 
-		// Will be used later to normalize the PPV
-		int min = 0;
-		int max = 0;
-
-		this->ppv = new float*[networkSize];
+		this->ppv = new int*[networkSize];
 		for (int i = 0; i < networkSize; i++)
 		{
-			this->ppv[i] = new float[networkSize];
+			this->ppv[i] = new int[networkSize];
 			for (int j = 0; j < networkSize; j++)
 			{
 				this->ppv[i][j] = globalPPV[i][j];
 				if (this->_usesLink[i][j])
 				{
 					this->ppv[i][j] -= 2;
-				}
-
-				if (this->ppv[i][j] < min || min == 0)
-				{
-					min = this->ppv[i][j];
-				}
-				if (this->ppv[i][j] > max)
-				{
-					max = this->ppv[i][j];
 				}
 			}
 		}
@@ -202,71 +167,150 @@ public:
 		int* edgeArray = network->parallelRepresentation.edges;
 		int numberOfEdges = network->parallelRepresentation.numberOfEdges;
 
-		cudaMalloc(&SDPair::d_vertexArray, sizeof(int) * networkSize);
-		cudaMalloc(&SDPair::d_edgeArray, sizeof(int) * numberOfEdges);
-		
-		cudaMemcpy(SDPair::d_vertexArray, vertexArray, sizeof(int) * networkSize, cudaMemcpyHostToDevice);
-		cudaMemcpy(SDPair::d_edgeArray, edgeArray, sizeof(int) * numberOfEdges, cudaMemcpyHostToDevice);
-		
+		auto error = cudaMalloc(&SDPair::d_vertexArray, sizeof(int) * networkSize);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error allocating vertex array: "<< cudaGetErrorString(error)<< std::endl;
+			exit(EXIT_FAILURE);
+		}
+		error = cudaMalloc(&SDPair::d_edgeArray, sizeof(int) * numberOfEdges);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error allocating edge array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
+		error = cudaMemcpy(SDPair::d_vertexArray, vertexArray, sizeof(int) * networkSize, cudaMemcpyHostToDevice);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error copying vertex array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
+		error = cudaMemcpy(SDPair::d_edgeArray, edgeArray, sizeof(int) * numberOfEdges, cudaMemcpyHostToDevice);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error copying edge array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
 	}
 
-	static SDPair*** calculateSDPairsFromGPU(Network* network, int**&globalPPV)
+	static SDPair*** calculateSDPairsFromGPU(Network* network)
 	{
 		int networkSize = network->size;
 		int numberOfEdges = network->parallelRepresentation.numberOfEdges;
 
 		bool* d_usesLink;
-		cudaMalloc(&d_usesLink, sizeof(bool) * networkSize * networkSize * numberOfEdges);
-		cudaMemset(d_usesLink, false, sizeof(bool) * networkSize * networkSize * numberOfEdges);
+		auto error = cudaMalloc(&d_usesLink, sizeof(bool) * networkSize * networkSize * numberOfEdges);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error allocating usesLink array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
+		error = cudaMemset(d_usesLink, false, sizeof(bool) * networkSize * networkSize * numberOfEdges);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error initializing usesLink array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
 
 		int* d_globalPPV;
-		cudaMalloc(&d_globalPPV, sizeof(int) * numberOfEdges);
-		cudaMemset(d_globalPPV, 0, sizeof(int) * numberOfEdges);
+		error = cudaMalloc(&d_globalPPV, sizeof(int) * numberOfEdges);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error allocating global PPV array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
+		error = cudaMemset(d_globalPPV, 0, sizeof(int) * numberOfEdges);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error initializing global PPV array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
 
-		dim3 blockSize(networkSize > numberOfEdges? networkSize : numberOfEdges, 1, 1);
+		int* d_PPV;
+		error = cudaMalloc(&d_PPV, sizeof(int) * networkSize * networkSize * numberOfEdges);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error allocating PPV array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
+
+		error = cudaSuccess;
+		int numberOfThreads = networkSize > numberOfEdges ? networkSize : numberOfEdges;
+		numberOfThreads = numberOfThreads <= 1024 ? numberOfThreads : 1024;
+		dim3 blockSize(numberOfThreads, 1, 1);
 		dim3 blocksPerGrid(networkSize, networkSize, 1);
-		usesLinkKernel << <blocksPerGrid, blockSize, sizeof(int) * (2* networkSize + numberOfEdges) + 3 * sizeof(bool) * networkSize >> >
+		
+		usesLinkKernel << <blocksPerGrid, blockSize, sizeof(int) * (3* networkSize + numberOfEdges + 1) + 1 * sizeof(bool)>> >
 			(SDPair::d_vertexArray, SDPair::d_edgeArray, d_usesLink, d_globalPPV, networkSize, numberOfEdges);
+		
+		error = cudaGetLastError();
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error executing usesLink kernel: " << cudaGetErrorString(error) << std::endl;
+			std::cerr << "The following information might be helpful\n";
+			std::cerr << "Number of blocks: " << networkSize * networkSize << std::endl;
+			std::cerr << "Number of threads per block: " << numberOfThreads << std::endl;
+			std::cerr << "Size of shared memory usage: " << sizeof(int) * (3 * networkSize + numberOfEdges + 1) + 1 * sizeof(bool) << std::endl;
+			exit(EXIT_FAILURE);
+		}
+
+		cudaDeviceSynchronize();
+
+		ppvKernel << <blocksPerGrid, blockSize>> >(d_usesLink, d_globalPPV, d_PPV, networkSize, numberOfEdges);
+
+		error = cudaGetLastError();
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error executing usesLink kernel: " << cudaGetErrorString(error) << std::endl;
+			std::cerr << "The following information might be helpful\n";
+			std::cerr << "Number of blocks: " << networkSize * networkSize << std::endl;
+			std::cerr << "Number of threads per block: " << numberOfThreads << std::endl;
+			std::cerr << "Size of shared memory usage: " << sizeof(int) * (3 * networkSize + numberOfEdges + 1) + 1 * sizeof(bool) << std::endl;
+			exit(EXIT_FAILURE);
+		}
 
 		bool* usesLink = new bool[networkSize * networkSize * numberOfEdges];
-		cudaMemcpy(usesLink, d_usesLink, sizeof(bool) * networkSize * networkSize * numberOfEdges, cudaMemcpyDeviceToHost);
+		error = cudaMemcpy(usesLink, d_usesLink, sizeof(bool) * networkSize * networkSize * numberOfEdges, cudaMemcpyDeviceToHost);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error copying usesLink array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
 
-		int* gpuGlobalPPV = new int[numberOfEdges];
-		cudaMemcpy(gpuGlobalPPV, d_globalPPV, sizeof(int) * numberOfEdges, cudaMemcpyDeviceToHost);
-		
-		SDPair*** result;
+		int* gpuPPV = new int[networkSize * networkSize * numberOfEdges];
+		error = cudaMemcpy(gpuPPV, d_PPV, sizeof(int) * networkSize * networkSize * numberOfEdges, cudaMemcpyDeviceToHost);
+		if (error != cudaSuccess)
+		{
+			std::cerr << "Error copying globaPPV array: " << cudaGetErrorString(error) << std::endl;
+			exit(EXIT_FAILURE);
+		}
+
 		SDPair*** result = new SDPair**[networkSize];
-		globalPPV = new int*[networkSize];
-		int gpuPPVIndex = 0;
 		for (int s = 0; s < networkSize; s++)
 		{
-			globalPPV[s] = new int[networkSize];
 			result[s] = new SDPair*[networkSize];
 			for (int d = 0; d < networkSize; d++)
 			{
-				globalPPV[s][d] = 0;
-				if (network->network[s][d] != 0)
-				{
-					globalPPV[s][d] = gpuGlobalPPV[gpuPPVIndex];
-					gpuPPVIndex++;
-				}
-
 				bool** sdUsesLink = new bool*[networkSize];
+				int** sdPPV = new int*[networkSize];
 				int gpuIndex = 0;
 				for (int s2 = 0; s2 < networkSize; s2++)
 				{
 					sdUsesLink[s2] = new bool[networkSize];
+					sdPPV[s2] = new int[networkSize];
 					for (int d2 = 0; d2 < networkSize; d2++)
 					{
 						sdUsesLink[s2][d2] = false;
+						sdPPV[s2][d2] = 0;
 						if (network->network[s2][d2] != 0)
 						{
 							sdUsesLink[s2][d2] = usesLink[s * networkSize * numberOfEdges + d * numberOfEdges + gpuIndex];
+							sdPPV[s2][d2] = gpuPPV[s * networkSize * numberOfEdges + d * numberOfEdges + gpuIndex];
 							gpuIndex++;
 						}
 					}
 				}
-				result[s][d] = new SDPair(s, d, network, sdUsesLink);
+				result[s][d] = new SDPair(s, d, network, sdUsesLink, sdPPV);
 			}
 		}
 
@@ -274,6 +318,36 @@ public:
 
 	}
 #endif
+
+	bool comparePPV(SDPair& other)
+	{
+		for (int i = 0; i < this->_network->size; i++)
+		{
+			for (int j = 0; j < this->_network->size; j++)
+			{
+				if (this->ppv[i][j] != other.ppv[i][j])
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	bool compareUsesLink(SDPair& other)
+	{
+		for (int i = 0; i < this->_network->size; i++)
+		{
+			for (int j = 0; j < this->_network->size; j++)
+			{
+				if (this->_usesLink[i][j] != other._usesLink[i][j])
+				{
+					return false;					
+				}
+			}
+		}
+		return true;
+	}
 
 	bool** getUsesLink()
 	{

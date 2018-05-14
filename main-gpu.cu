@@ -68,18 +68,42 @@ int main(int argc, char** argv)
 	GpuTimer timer;
 	timer.Start();
 	SDPair::prepareGPU(network);
-	int** globalPPVGPU;
-	SDPair*** sdPairsGPU = SDPair::calculateSDPairsFromGPU(network, globalPPVGPU);
+	SDPair*** sdPairsGPU = SDPair::calculateSDPairsFromGPU(network);
+	timer.Stop();
+	cout << left<< setw(30) << "PPV Calculation: " << timer.Elapsed() / 1000 << endl;
+
+	cout << "------------------------------\n";
+	cout << "Result Comparison:\n";
+	cout << "------------------------------\n";
+	int ppvDifferences = 0;
+	int usesLinkDifferences = 0;
 	for (int s = 0; s < network->size; s++)
 	{
 		for (int d = 0; d < network->size; d++)
 		{
 			if (s == d) continue;
-			sdPairsGPU[s][d]->calculatePPV(globalPPVGPU);
+			if (sdPairsCPU[s][d]->comparePPV(*sdPairsGPU[s][d]) == false)
+			{
+				ppvDifferences++;
+			}
+			if (sdPairsCPU[s][d]->compareUsesLink(*sdPairsGPU[s][d]) == false)
+			{
+				usesLinkDifferences++;
+			}
 		}
 	}
-	timer.Stop();
-	cout << left<< setw(30) << "PPV Calculation: " << timer.Elapsed() / 1000 << endl;
+	if (!usesLinkDifferences)
+	{
+		cout << "Results are identical!\n";
+	}
+	else
+	{
+		cout << ppvDifferences << " out of " << network->size * network->size << " SD pairs have different PPV values between CPU and GPU\n";
+		cout << usesLinkDifferences << " out of " << network->size * network->size << " SD pairs have different usesLink values between CPU and GPU\n";
+		cout << "This is caused by the fact that the BFS algorithm implemented is different, and it picks its nodes in a slightly different order\n";
+		cout << "This has been checked by inspecting many of the outputs, and validating that both of them are actually correct solutions\n";
+		cout << "Notice that the number of difference in usesLink is generally less than the number of differences in PPV, because one difference in usesLink causes many differences in PPV\n";
+	}
 
 	return 0;
 }
